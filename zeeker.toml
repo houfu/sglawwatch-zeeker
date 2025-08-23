@@ -1,0 +1,8 @@
+[project]
+name = "sglawwatch"
+database = "sglawwatch.db"
+
+[resource.headlines]
+description = "Headlines from Singapore Law Watch's RSS feed"
+fts_fields = ["title", "summary", "text"]
+

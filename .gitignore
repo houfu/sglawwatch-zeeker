@@ -1,0 +1,18 @@
+# Generated database
+*.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+.env
+*.egg-info/
+
+# Data files (uncomment if you want to ignore data directory)
+# data/
+# raw/
+
+# OS
+.DS_Store
+Thumbs.db
