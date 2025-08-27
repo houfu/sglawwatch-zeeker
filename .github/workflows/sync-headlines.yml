@@ -1,0 +1,63 @@
+name: Sync Headlines Database
+
+on:
+  schedule:
+    # Run daily at 2 AM UTC (adjust timezone as needed)
+    - cron: '0 3 * * *'
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  sync-headlines:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: "latest"
+
+    - name: Install dependencies
+      run: uv sync
+
+    - name: Build headlines database
+      env:
+        JINA_API_TOKEN: ${{ secrets.JINA_API_TOKEN }}
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      run: uv run zeeker build
+
+    - name: Deploy to S3
+      env:
+        S3_BUCKET: ${{ secrets.S3_BUCKET }}
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        S3_ENDPOINT_URL: ${{ secrets.S3_ENDPOINT_URL }}
+        AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+        AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+      run: uv run zeeker deploy
+
+    - name: Backup database to S3 with date
+      env:
+        S3_BUCKET: ${{ secrets.S3_BUCKET }}
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        S3_ENDPOINT_URL: ${{ secrets.S3_ENDPOINT_URL }}
+        AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+        AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+      run: |
+        DATE_PATH=$(date +%Y/%m/%d)
+        aws s3 cp sglawwatch-zeeker.db s3://$S3_BUCKET/archives/$DATE_PATH/sglawwatch.db
+
+    - name: Upload database artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: headlines-database-${{ github.run_number }}
+        path: sglawwatch.db
+        retention-days: 7
