@@ -587,7 +587,7 @@ requires-dist = [
     { name = "pytest-asyncio", specifier = ">=1.1.0" },
     { name = "pytest-dotenv", specifier = ">=0.5.2" },
     { name = "tenacity", specifier = ">=9.1.2" },
-    { name = "zeeker", editable = "../zeeker" },
+    { name = "zeeker" },
 ]
 
 [package.metadata.requires-dev]
@@ -709,7 +709,7 @@ wheels = [
 [[package]]
 name = "zeeker"
 version = "0.4.0"
-source = { editable = "../zeeker" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "boto3" },
     { name = "click" },
@@ -718,22 +718,7 @@ dependencies = [
     { name = "pyyaml" },
     { name = "sqlite-utils" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "boto3", specifier = ">=1.38.32" },
-    { name = "click", specifier = ">=8.2.1" },
-    { name = "jinja2", specifier = ">=3.1.6" },
-    { name = "python-dotenv", specifier = ">=1.0.0" },
-    { name = "pyyaml", specifier = ">=6.0.2" },
-    { name = "sqlite-utils", specifier = ">=3.38" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "black", specifier = ">=25.1.0" },
-    { name = "pytest", specifier = ">=8.4.0" },
-    { name = "pytest-cov", specifier = ">=6.2.1" },
-    { name = "ruff", specifier = ">=0.8.0" },
-    { name = "toml", specifier = ">=0.10.2" },
+sdist = { url = "https://files.pythonhosted.org/packages/46/80/ce79b6cd46421e3a9a8ead1ef2b9de9901d0d54a0adcf19704cc4c0d4da1/zeeker-0.4.0.tar.gz", hash = "sha256:0dfb5a85d48294f9907a9bdc46b89e7ce675e8bb44c6938eae2b42d67f1ff0f7", size = 162890, upload-time = "2025-08-22T16:51:11.59Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/00/ec/a414635b2865ba7fa1a61ad576af67cd12b6aceabe76759be10479ef7da2/zeeker-0.4.0-py3-none-any.whl", hash = "sha256:f62e93954cb7ef1b8f91f196d6b985ab1953bede84fe140b030b6f187a27ee95", size = 62137, upload-time = "2025-08-22T16:51:10.419Z" },
 ]
