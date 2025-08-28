@@ -150,10 +150,10 @@ def _get_existing_data(existing_table: Optional[Table]) -> tuple[set, Optional[d
     """Extract existing IDs and last update time from table."""
     existing_ids = set()
     last_updated = None
-    
+
     if not existing_table:
         return existing_ids, last_updated
-        
+
     db = existing_table.db
     existing_ids = {row["id"] for row in existing_table.rows}
 
@@ -164,47 +164,59 @@ def _get_existing_data(existing_table: Optional[Table]) -> tuple[set, Optional[d
             last_updated = datetime.fromisoformat(metadata["last_updated"])
         except Exception as e:
             print("No metadata found for this table yet:", str(e))
-    
+
     return existing_ids, last_updated
 
 
-def _should_skip_entry(entry: Dict, current_date: datetime, last_updated: Optional[datetime], 
-                       existing_ids: set, max_day_limit: int = 60) -> tuple[bool, str]:
+def _should_skip_entry(
+    entry: Dict,
+    current_date: datetime,
+    last_updated: Optional[datetime],
+    existing_ids: set,
+    max_day_limit: int = 60,
+) -> tuple[bool, str]:
     """Check if entry should be skipped and return skip reason."""
     title = entry.get("title", "")
-    
+
     if title.startswith("ADV:"):
         return True, "advertisement"
-    
+
     try:
         entry_date = datetime.fromisoformat(convert_date_to_iso(entry.get("published", "")))
     except ValueError:
         click.echo(f"Error parsing date for entry: {title}", err=True)
         return True, "date_error"
-    
+
     days_old = (current_date - entry_date).days
     if days_old > max_day_limit:
         return True, "too_old"
-    
+
     if last_updated and entry_date <= last_updated:
         return True, "already_processed_by_time"
-    
+
     entry_id = get_hash_id([entry_date.isoformat(), str(title)])
     if existing_ids and entry_id in existing_ids:
         return True, "already_processed_by_id"
-    
+
     return False, ""
 
 
-def _log_skip_counts(skipped_adv_count: int, skipped_old_count: int, 
-                     skipped_processed_time_count: int, skipped_processed_id_count: int, max_day_limit: int):
+def _log_skip_counts(
+    skipped_adv_count: int,
+    skipped_old_count: int,
+    skipped_processed_time_count: int,
+    skipped_processed_id_count: int,
+    max_day_limit: int,
+):
     """Log summary of skipped entries."""
     if skipped_adv_count > 0:
         click.echo(f"Skipped {skipped_adv_count} advertisements")
     if skipped_old_count > 0:
         click.echo(f"Skipped {skipped_old_count} headlines older than {max_day_limit} days")
     if skipped_processed_time_count > 0:
-        click.echo(f"Skipped {skipped_processed_time_count} headlines older than last update timestamp")
+        click.echo(
+            f"Skipped {skipped_processed_time_count} headlines older than last update timestamp"
+        )
     if skipped_processed_id_count > 0:
         click.echo(f"Skipped {skipped_processed_id_count} headlines with duplicate IDs in database")
 
@@ -225,9 +237,9 @@ async def fetch_data(existing_table: Optional[Table]):
     feed = feedparser.parse(HEADLINES_URL)
     max_day_limit = 60
     current_date = datetime.now()
-    
+
     existing_ids, last_updated = _get_existing_data(existing_table)
-    
+
     tasks = []
     new_entries_count = 0
     skipped_adv_count = 0
@@ -239,7 +251,7 @@ async def fetch_data(existing_table: Optional[Table]):
         should_skip, skip_reason = _should_skip_entry(
             entry, current_date, last_updated, existing_ids, max_day_limit
         )
-        
+
         if should_skip:
             title = entry.get("title", "")
             if skip_reason == "advertisement":
@@ -247,12 +259,17 @@ async def fetch_data(existing_table: Optional[Table]):
                 click.echo(f"Skipping advertisement: {title}")
             elif skip_reason == "too_old":
                 skipped_old_count += 1
-                days_old = (current_date - datetime.fromisoformat(convert_date_to_iso(entry.get("published", "")))).days
+                days_old = (
+                    current_date
+                    - datetime.fromisoformat(convert_date_to_iso(entry.get("published", "")))
+                ).days
                 click.echo(f"Skipping old headline ({days_old} days): {title}")
             elif skip_reason == "already_processed_by_time":
                 skipped_processed_time_count += 1
                 entry_date_str = entry.get("published", "")
-                click.echo(f"  → Skipping (published {entry_date_str}, before last_updated {last_updated.strftime('%Y-%m-%d %H:%M:%S') if last_updated else 'None'}): {title}")
+                click.echo(
+                    f"  → Skipping (published {entry_date_str}, before last_updated {last_updated.strftime('%Y-%m-%d %H:%M:%S') if last_updated else 'None'}): {title}"
+                )
             elif skip_reason == "already_processed_by_id":
                 skipped_processed_id_count += 1
                 click.echo(f"  → Skipping (duplicate ID in database): {title}")
@@ -265,5 +282,11 @@ async def fetch_data(existing_table: Optional[Table]):
     results = await asyncio.gather(*tasks)
 
     click.echo(f"Added {new_entries_count} new headlines")
-    _log_skip_counts(skipped_adv_count, skipped_old_count, skipped_processed_time_count, skipped_processed_id_count, max_day_limit)
+    _log_skip_counts(
+        skipped_adv_count,
+        skipped_old_count,
+        skipped_processed_time_count,
+        skipped_processed_id_count,
+        max_day_limit,
+    )
     return results
