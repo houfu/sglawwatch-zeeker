@@ -1,0 +1,169 @@
+name: Database Health Check
+
+on:
+  # Allow manual health checks only
+  workflow_dispatch:
+  
+  # Run after successful deployments
+  workflow_run:
+    workflows: ["Build and Deploy Sglawwatch Database", "Deploy About Singapore Law Database"]
+    types: [completed]
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: "latest"
+    
+    - name: Install dependencies
+      run: uv sync
+    
+    - name: Download latest database from S3
+      env:
+        S3_BUCKET: ${{ secrets.S3_BUCKET }}
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        S3_ENDPOINT_URL: ${{ secrets.S3_ENDPOINT_URL }}
+      run: |
+        # Install AWS CLI or use Python to download
+        uv run python -c "
+        import os
+        import boto3
+        from botocore.exceptions import NoCredentialsError, ClientError
+        
+        try:
+            # Configure S3 client
+            session = boto3.Session(
+                aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
+                aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY')
+            )
+            
+            s3_kwargs = {}
+            if os.environ.get('S3_ENDPOINT_URL'):
+                s3_kwargs['endpoint_url'] = os.environ.get('S3_ENDPOINT_URL')
+            
+            s3 = session.client('s3', **s3_kwargs)
+            bucket = os.environ.get('S3_BUCKET')
+            
+            # Download the database
+            print('Downloading latest database from S3...')
+            s3.download_file(bucket, 'latest/sglawwatch.db', 'sglawwatch.db')
+            print('Database downloaded successfully')
+            
+        except Exception as e:
+            print(f'Failed to download database: {e}')
+            exit(1)
+        "
+    
+    - name: Perform health checks
+      run: |
+        echo "Performing database health checks..."
+        
+        uv run python -c "
+        import sqlite3
+        import sys
+        from datetime import datetime, timedelta
+        
+        def check_database_health():
+            try:
+                conn = sqlite3.connect('sglawwatch.db')
+                cursor = conn.cursor()
+                
+                # Check 1: Database file exists and can be opened
+                print('✅ Database file accessible')
+                
+                # Check 2: Expected tables exist
+                cursor.execute('SELECT name FROM sqlite_master WHERE type=\"table\" AND name NOT LIKE \"sqlite_%\"')
+                tables = [row[0] for row in cursor.fetchall()]
+                
+                expected_tables = ['about_singapore_law', 'about_singapore_law_fragments']
+                missing_tables = [t for t in expected_tables if t not in tables]
+                
+                if missing_tables:
+                    print(f'❌ Missing tables: {missing_tables}')
+                    return False
+                print(f'✅ All expected tables present: {tables}')
+                
+                # Check 3: Tables have data
+                total_records = 0
+                for table in tables:
+                    cursor.execute(f'SELECT COUNT(*) FROM {table}')
+                    count = cursor.fetchone()[0]
+                    print(f'  {table}: {count:,} records')
+                    total_records += count
+                
+                if total_records == 0:
+                    print('❌ No data found in any table')
+                    return False
+                print(f'✅ Total records: {total_records:,}')
+                
+                # Check 4: Recent data exists (for resources with timestamps)
+                try:
+                    cursor.execute('SELECT COUNT(*) FROM about_singapore_law WHERE last_scraped > date(\"now\", \"-7 days\")')
+                    recent_count = cursor.fetchone()[0]
+                    print(f'✅ Recent data (last 7 days): {recent_count} records')
+                except:
+                    print('ℹ️ No timestamp field available for freshness check')
+                
+                # Check 5: Sample data quality
+                cursor.execute('SELECT title, item_url FROM about_singapore_law LIMIT 3')
+                samples = cursor.fetchall()
+                
+                if not samples:
+                    print('❌ No sample data available')
+                    return False
+                
+                print('✅ Sample data:')
+                for title, url in samples:
+                    print(f'  - {title[:50]}...')
+                    if not url.startswith('http'):
+                        print(f'❌ Invalid URL format: {url}')
+                        return False
+                
+                print('✅ All health checks passed')
+                return True
+                
+            except Exception as e:
+                print(f'❌ Health check failed: {e}')
+                return False
+        
+        success = check_database_health()
+        if not success:
+            sys.exit(1)
+        "
+    
+    - name: Create health report
+      if: always()
+      run: |
+        if [ $? -eq 0 ]; then
+          echo "## ✅ Database Health Check Passed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All database health checks completed successfully." >> $GITHUB_STEP_SUMMARY
+        else
+          echo "## ❌ Database Health Check Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "One or more health checks failed. Review the logs for details." >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Check Time:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+        echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+        
+        # Add database info
+        if [ -f "sglawwatch.db" ]; then
+          DB_SIZE=$(du -h sglawwatch.db | cut -f1)
+          echo "**Database Size:** ${DB_SIZE}" >> $GITHUB_STEP_SUMMARY
+        fi

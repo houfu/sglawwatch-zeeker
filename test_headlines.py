@@ -2,16 +2,17 @@
 Tests for the headlines resource.
 """
 
-import pytest
-from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 from resources.headlines import (
-    get_hash_id,
     convert_date_to_iso,
-    process_entry,
     fetch_data,
+    get_hash_id,
     get_jina_reader_content,
     get_summary,
+    process_entry,
 )
 
 
@@ -224,7 +225,7 @@ class TestAsyncFunctions:
             with patch("resources.headlines.process_entry", new_callable=AsyncMock) as mock_process:
                 mock_process.return_value = {"id": "test123", "title": "New Article"}
 
-                result = await fetch_data(mock_table)
+                await fetch_data(mock_table)
 
                 # Should only process the new article
                 assert mock_process.call_count == 1
