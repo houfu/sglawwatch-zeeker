@@ -603,7 +603,7 @@ requires-dist = [
     { name = "pytest-asyncio", specifier = ">=1.1.0" },
     { name = "pytest-dotenv", specifier = ">=0.5.2" },
     { name = "tenacity", specifier = ">=9.1.2" },
-    { name = "zeeker" },
+    { name = "zeeker", specifier = ">=0.5.1" },
 ]
 
 [package.metadata.requires-dev]
@@ -733,7 +733,7 @@ wheels = [
 
 [[package]]
 name = "zeeker"
-version = "0.5.0"
+version = "0.5.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "boto3" },
@@ -743,7 +743,7 @@ dependencies = [
     { name = "pyyaml" },
     { name = "sqlite-utils" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/cc/02/3488b7a50171295851e4301b9935d5698b47e6959f3adc533e694b008b6e/zeeker-0.5.0.tar.gz", hash = "sha256:b8b41251d0995503714abfbfd0f102b9addf0372257ebeb5b1ef00816f741970", size = 175066, upload-time = "2025-08-27T21:45:11.684Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/bc/3e/ffbf532b528f6f47e240b48ed1d33ad8d1d561801487ea480c57464ba528/zeeker-0.5.1.tar.gz", hash = "sha256:c310d4ba98f3e65397fdb7c778cd146a397dff53c814d30e92dce7ecbeb1eeeb", size = 176038, upload-time = "2025-09-03T22:15:07.684Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ea/43/f5bfce980f5e1b50b9f4bb8b25d59ae98317e73ab5a6676733ac1b434682/zeeker-0.5.0-py3-none-any.whl", hash = "sha256:5e743e42b1b27ce39a1ce1e554afcf188fef098260a88a4bfd5122c75fddaf27", size = 73240, upload-time = "2025-08-27T21:45:10.315Z" },
+    { url = "https://files.pythonhosted.org/packages/f9/1b/e736c688ab23a6d9adf574602e49079505a0fd2dd0a5f8ef723e190f8dd4/zeeker-0.5.1-py3-none-any.whl", hash = "sha256:2cba3323fd1083ed70b060354fb184754c671a906c95b2687e180390918ac574", size = 75042, upload-time = "2025-09-03T22:15:06.428Z" },
 ]

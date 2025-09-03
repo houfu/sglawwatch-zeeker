@@ -1,0 +1,119 @@
+name: Backup Database to S3 Archives
+
+on:
+  # Allow manual triggering only
+  workflow_dispatch:
+    inputs:
+      backup_date:
+        description: 'Backup date in YYYY-MM-DD format (leave empty for today)'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Dry run - show what would be backed up without uploading'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+    
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: "latest"
+    
+    - name: Install dependencies
+      run: uv sync
+    
+    - name: Check if database exists locally
+      run: |
+        if [ ! -f "sglawwatch.db" ]; then
+          echo "No local database found. Building from resources first..."
+          uv run zeeker build
+          
+          if [ ! -f "sglawwatch.db" ]; then
+            echo "Error: Unable to create database for backup"
+            exit 1
+          fi
+        fi
+        
+        # Get database info
+        DB_SIZE=$(du -h sglawwatch.db | cut -f1)
+        echo "Database ready for backup (${DB_SIZE})"
+    
+    - name: Create backup archive
+      env:
+        S3_BUCKET: ${{ secrets.S3_BUCKET }}
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        S3_ENDPOINT_URL: ${{ secrets.S3_ENDPOINT_URL }}
+      run: |
+        # Determine backup command based on inputs
+        BACKUP_CMD="uv run zeeker backup"
+        
+        if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+          BACKUP_CMD="$BACKUP_CMD --dry-run"
+          echo "🔍 Performing dry run - no files will be uploaded"
+        else
+          echo "📦 Creating backup archive..."
+        fi
+        
+        if [ -n "${{ github.event.inputs.backup_date }}" ]; then
+          BACKUP_CMD="$BACKUP_CMD --date ${{ github.event.inputs.backup_date }}"
+          echo "📅 Using specific date: ${{ github.event.inputs.backup_date }}"
+        else
+          echo "📅 Using today's date: $(date -u +%Y-%m-%d)"
+        fi
+        
+        # Execute backup command
+        $BACKUP_CMD
+        
+        if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+          echo "✅ Dry run completed successfully"
+        else
+          echo "✅ Backup archive created successfully"
+        fi
+    
+    - name: Create backup summary
+      if: always()
+      run: |
+        if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+          echo "## 🔍 Backup Dry Run Completed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "No files were uploaded - this was a preview only." >> $GITHUB_STEP_SUMMARY
+        elif [ $? -eq 0 ]; then
+          echo "## ✅ Backup Archive Created" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "## ❌ Backup Failed" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Database:** sglawwatch.db" >> $GITHUB_STEP_SUMMARY
+        
+        if [ -n "${{ github.event.inputs.backup_date }}" ]; then
+          echo "**Backup Date:** ${{ github.event.inputs.backup_date }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Archive Location:** s3://\${{ secrets.S3_BUCKET }}/archives/${{ github.event.inputs.backup_date }}/sglawwatch.db" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "**Backup Date:** $(date -u +%Y-%m-%d)" >> $GITHUB_STEP_SUMMARY
+          echo "**Archive Location:** s3://\${{ secrets.S3_BUCKET }}/archives/$(date -u +%Y-%m-%d)/sglawwatch.db" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "**Timestamp:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+        echo "**Trigger:** Manual (${{ github.event_name }})" >> $GITHUB_STEP_SUMMARY
+        
+        # Add database info if available
+        if [ -f "sglawwatch.db" ]; then
+          DB_SIZE=$(du -h sglawwatch.db | cut -f1)
+          echo "**Database Size:** ${DB_SIZE}" >> $GITHUB_STEP_SUMMARY
+        fi

@@ -107,6 +107,17 @@ jobs:
         echo "Deploying database to S3..."
         uv run zeeker deploy
         echo "Deployment completed successfully"
+    
+    - name: Create backup archive
+      env:
+        S3_BUCKET: ${{ secrets.S3_BUCKET }}
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        S3_ENDPOINT_URL: ${{ secrets.S3_ENDPOINT_URL }}
+      run: |
+        echo "Creating backup archive with today's date..."
+        uv run zeeker backup
+        echo "Backup archive created successfully"
       
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
@@ -121,9 +132,11 @@ jobs:
     - name: Create deployment summary
       if: success()
       run: |
-        echo "## ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
+        echo "## ✅ Deployment & Backup Successful" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "**Database:** sglawwatch.db" >> $GITHUB_STEP_SUMMARY
+        echo "**Deployed to:** s3://\${{ secrets.S3_BUCKET }}/latest/sglawwatch.db" >> $GITHUB_STEP_SUMMARY
+        echo "**Backup archived to:** s3://\${{ secrets.S3_BUCKET }}/archives/$(date -u +%Y-%m-%d)/sglawwatch.db" >> $GITHUB_STEP_SUMMARY
         echo "**Timestamp:** $(date -u)" >> $GITHUB_STEP_SUMMARY
         echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
         
