@@ -3,6 +3,7 @@ name = "sglawwatch-zeeker"
 version = "0.1.0"
 description = "Zeeker database project for sglawwatch-zeeker"
 dependencies = [
+    "beautifulsoup4>=4.12.0",
     "feedparser>=6.0.11",
     "httpx>=0.28.1",
     "openai>=1.99.6",

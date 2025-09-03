@@ -44,9 +44,15 @@ When implementing resources that need external libraries:
 ## Resources in This Project
 
 ### `headlines` Resource
-- **Description:** Headlines data
+- **Description:** Keep in touch with the latest legal news articles collated from The Straits Times, The Business Times, Lianhe Zaobao and TODAY.
 - **File:** `resources/headlines.py`
 - **Schema:** Check `resources/headlines.py` fetch_data() for current schema
+
+### `about_singapore_law` Resource
+- **Description:** About Singapore Law data
+- **File:** `resources/about_singapore_law.py`
+- **Type:** Fragment-enabled (creates two tables: `about_singapore_law` and `about_singapore_law_fragments`)
+- **Schema:** Check `resources/about_singapore_law.py` both fetch_data() and fetch_fragments_data() functions
 
 
 ## Schema Notes for This Project

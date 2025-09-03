@@ -10,14 +10,9 @@ source = "https://www.singaporelawwatch.sg/"
 [resource.headlines]
 description = "Keep in touch with the latest legal news articles collated from The Straits Times, The Business Times, Lianhe Zaobao and TODAY."
 fts_fields = ["title", "summary", "text"]
+columns = {id = "Primary key (Zeeker)", category = "The source of the news article", title = "Title of the news", source_link = "Source link", author = "The author of the news article", date = "Date of the news article", summary = "Brief summary", text = "Text content of the news article", imported_on = "Imported date"}
 
-[resource.headlines.columns]
-id = "Primary key (Zeeker)"
-category = "The source of the news article"
-title = "Title of the news"
-source_link = "Source link"
-author = "The author of the news article"
-date = "Date of the news article"
-summary = "Brief summary"
-text = "Text content of the news article"
-imported_on = "Imported date"
+[resource.about_singapore_law]
+description = "About Singapore Law data"
+fragments = true
+

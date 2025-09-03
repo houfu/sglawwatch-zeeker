@@ -1,0 +1,174 @@
+name: Build and Deploy Sglawwatch Database
+
+on:
+  # Allow manual triggering only
+  workflow_dispatch:
+    inputs:
+      resource:
+        description: 'Specific resource to build (leave empty for all resources)'
+        required: false
+        default: ''
+      force_rebuild:
+        description: 'Force full rebuild (ignore existing data)'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: "latest"
+    
+    - name: Install dependencies
+      run: uv sync
+    
+    - name: Build database
+      run: |
+        echo "Building sglawwatch database..."
+        
+        # Determine which resources to build
+        if [ -n "${{ github.event.inputs.resource }}" ]; then
+          echo "Building specific resource: ${{ github.event.inputs.resource }}"
+          uv run zeeker build ${{ github.event.inputs.resource }}
+        else
+          echo "Building all resources"
+          uv run zeeker build
+        fi
+        
+        # Check if database was created successfully
+        if [ ! -f "sglawwatch.db" ]; then
+          echo "Error: Database file not created"
+          exit 1
+        fi
+        
+        # Get database size for logging
+        DB_SIZE=$(du -h sglawwatch.db | cut -f1)
+        echo "Database created successfully (${DB_SIZE})"
+      
+    - name: Validate database
+      run: |
+        echo "Validating database structure..."
+        uv run python -c "
+        import sqlite3
+        import sys
+        
+        try:
+            conn = sqlite3.connect('sglawwatch.db')
+            cursor = conn.cursor()
+            
+            # Check tables exist
+            cursor.execute('SELECT name FROM sqlite_master WHERE type=\"table\"')
+            tables = [row[0] for row in cursor.fetchall()]
+            print(f'Tables found: {tables}')
+            
+            # Check data exists
+            total_records = 0
+            for table in tables:
+                if not table.startswith('sqlite_'):
+                    cursor.execute(f'SELECT COUNT(*) FROM {table}')
+                    count = cursor.fetchone()[0]
+                    print(f'{table}: {count} records')
+                    total_records += count
+            
+            if total_records == 0:
+                print('Error: No data found in database')
+                sys.exit(1)
+                
+            print(f'Database validation passed: {total_records} total records')
+            
+        except Exception as e:
+            print(f'Database validation failed: {e}')
+            sys.exit(1)
+        "
+      
+    - name: Deploy to S3
+      env:
+        S3_BUCKET: ${{ secrets.S3_BUCKET }}
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        S3_ENDPOINT_URL: ${{ secrets.S3_ENDPOINT_URL }}
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        JINA_API_TOKEN: ${{ secrets.JINA_API_TOKEN }}
+      run: |
+        echo "Deploying database to S3..."
+        uv run zeeker deploy
+        echo "Deployment completed successfully"
+      
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: sglawwatch-database-${{ github.run_number }}
+        path: |
+          sglawwatch.db
+          metadata.json
+        retention-days: 14
+    
+    - name: Create deployment summary
+      if: success()
+      run: |
+        echo "## ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Database:** sglawwatch.db" >> $GITHUB_STEP_SUMMARY
+        echo "**Timestamp:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+        echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+        
+        if [ -n "${{ github.event.inputs.resource }}" ]; then
+          echo "**Resource:** ${{ github.event.inputs.resource }}" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "**Resource:** All resources" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        # Add database statistics
+        uv run python -c "
+        import sqlite3
+        conn = sqlite3.connect('sglawwatch.db')
+        cursor = conn.cursor()
+        
+        # Get all non-system tables
+        cursor.execute('SELECT name FROM sqlite_master WHERE type=\"table\" AND name NOT LIKE \"sqlite_%\"')
+        tables = [row[0] for row in cursor.fetchall()]
+        
+        print('**Database Statistics:**')
+        total_records = 0
+        for table in tables:
+            cursor.execute(f'SELECT COUNT(*) FROM {table}')
+            count = cursor.fetchone()[0]
+            print(f'- {table}: {count:,} records')
+            total_records += count
+        
+        print(f'- **Total records:** {total_records:,}')
+        
+        # Get database size
+        import os
+        size_bytes = os.path.getsize('sglawwatch.db')
+        size_mb = size_bytes / (1024 * 1024)
+        print(f'- **Database size:** {size_mb:.1f} MB')
+        " >> $GITHUB_STEP_SUMMARY
+    
+    - name: Notify on failure
+      if: failure()
+      run: |
+        echo "## ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "The sglawwatch database build or deployment failed." >> $GITHUB_STEP_SUMMARY
+        echo "Check the logs above for details." >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Timestamp:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+        echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY

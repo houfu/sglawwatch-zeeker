@@ -1,0 +1,124 @@
+name: Deploy About Singapore Law Database
+
+on:
+  # Allow manual triggering only
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: 'Force full rebuild (ignore existing data)'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: "latest"
+    
+    - name: Install dependencies
+      run: uv sync
+    
+    - name: Build about_singapore_law database
+      run: |
+        echo "Building about_singapore_law resource..."
+        uv run zeeker build about_singapore_law
+        
+        # Check if database was created successfully
+        if [ ! -f "sglawwatch.db" ]; then
+          echo "Error: Database file not created"
+          exit 1
+        fi
+        
+        # Get database size for logging
+        DB_SIZE=$(du -h sglawwatch.db | cut -f1)
+        echo "Database created successfully (${DB_SIZE})"
+        
+        # Count records for verification
+        RECORD_COUNT=$(uv run python -c "
+        import sqlite3
+        conn = sqlite3.connect('sglawwatch.db')
+        cursor = conn.cursor()
+        cursor.execute('SELECT COUNT(*) FROM about_singapore_law')
+        chapters = cursor.fetchone()[0]
+        cursor.execute('SELECT COUNT(*) FROM about_singapore_law_fragments')
+        fragments = cursor.fetchone()[0]
+        print(f'Chapters: {chapters}, Fragments: {fragments}')
+        ")
+        echo "Database contents: ${RECORD_COUNT}"
+      
+    - name: Deploy to S3
+      env:
+        S3_BUCKET: ${{ secrets.S3_BUCKET }}
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        S3_ENDPOINT_URL: ${{ secrets.S3_ENDPOINT_URL }}
+      run: |
+        echo "Deploying database to S3..."
+        uv run zeeker deploy
+        echo "Deployment completed successfully"
+      
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: database-build-${{ github.run_number }}
+        path: |
+          sglawwatch.db
+          metadata.json
+        retention-days: 7
+    
+    - name: Create deployment summary
+      if: success()
+      run: |
+        echo "## ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Database:** sglawwatch.db" >> $GITHUB_STEP_SUMMARY
+        echo "**Resource:** about_singapore_law" >> $GITHUB_STEP_SUMMARY
+        echo "**Timestamp:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        # Add database statistics
+        uv run python -c "
+        import sqlite3
+        import json
+        conn = sqlite3.connect('sglawwatch.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT COUNT(*) FROM about_singapore_law')
+        chapters = cursor.fetchone()[0]
+        cursor.execute('SELECT COUNT(*) FROM about_singapore_law_fragments')  
+        fragments = cursor.fetchone()[0]
+        
+        # Get some sample data
+        cursor.execute('SELECT title FROM about_singapore_law LIMIT 3')
+        sample_chapters = [row[0] for row in cursor.fetchall()]
+        
+        print(f'**Statistics:**')
+        print(f'- Chapters processed: {chapters}')
+        print(f'- Fragments created: {fragments}')
+        print(f'- Sample chapters: {sample_chapters}')
+        " >> $GITHUB_STEP_SUMMARY
+    
+    - name: Notify on failure
+      if: failure()
+      run: |
+        echo "## ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "The about_singapore_law database build or deployment failed." >> $GITHUB_STEP_SUMMARY
+        echo "Check the logs above for details." >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Timestamp:** $(date -u)" >> $GITHUB_STEP_SUMMARY
