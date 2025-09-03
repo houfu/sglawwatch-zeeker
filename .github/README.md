@@ -15,6 +15,7 @@ This directory contains GitHub Actions workflows for automated building and depl
 - Fast execution (typically 5-10 minutes)
 - Detailed logging and validation
 - S3 deployment with error handling
+- Automatic backup creation after deployment
 
 ### 2. `build-and-deploy.yml` 
 **Purpose:** Comprehensive workflow for all resources in the project.
@@ -28,6 +29,33 @@ This directory contains GitHub Actions workflows for automated building and depl
 - Support for all environment variables
 - Extended timeout (45 minutes)
 - Detailed statistics and summaries
+- Automatic backup creation after deployment
+
+### 3. `backup-database.yml`
+**Purpose:** Create date-based backup archives in S3.
+
+**Triggers:**
+- **Manual trigger only:** Workflow dispatch with optional date and dry-run
+
+**Features:**
+- Creates backups with specific dates or today's date
+- Dry-run mode for testing without uploading
+- Stores archives at `s3://bucket/archives/YYYY-MM-DD/`
+- Automatically builds database if not present locally
+- Lightweight and fast execution (< 15 minutes)
+
+### 4. `health-check.yml`
+**Purpose:** Validate deployed databases and monitor system health.
+
+**Triggers:**
+- **Manual trigger:** For on-demand health checks
+- **Automatic trigger:** After successful deployments
+
+**Features:**
+- Downloads and validates deployed databases from S3
+- Comprehensive health checks and data quality validation
+- Reports on database statistics and freshness
+- Alerts on issues or anomalies
 
 ## Setup Instructions
 
@@ -151,7 +179,13 @@ Workflow status appears in:
    - Use workflow dispatch for immediate deployment
    - Useful for urgent updates or testing
 
-4. **Production Deployment:**
+4. **Backup Management:**
+   - Each deployment automatically creates a dated backup in S3 archives
+   - Use the `Backup Database to S3 Archives` workflow for on-demand backups
+   - Support for specific dates and dry-run testing
+   - Archives stored at: `s3://bucket/archives/YYYY-MM-DD/sglawwatch.db`
+
+5. **Production Deployment:**
    - Run workflows manually as needed to keep data current
    - Check for any structural changes in source websites
    - Monitor database size and record count trends
