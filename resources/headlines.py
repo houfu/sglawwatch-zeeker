@@ -132,17 +132,40 @@ async def process_entry(entry: Dict) -> Optional[Dict]:
             "imported_on": datetime.now().isoformat(),
         }
 
-        # Fetch content from Jina reader
+        # Fetch content from Jina reader with graceful fallback
         click.echo(f"Processing: {entry_data['title']} from {entry_data['date']}")
-        entry_data["text"] = await get_jina_reader_content(entry_data["source_link"])
+        
+        # Check if URL is problematic (some URLs cause 422 errors with Jina Reader)
+        source_url = entry_data["source_link"]
+        skip_jina = any(pattern in source_url for pattern in [
+            'store.lawnet.com',  # Known to cause 422 errors
+            'utm_source=',       # URLs with tracking parameters sometimes fail
+        ])
+        
+        try:
+            if skip_jina:
+                click.echo(f"  → Skipping Jina Reader for problematic URL pattern")
+                raise Exception("URL pattern known to cause issues")
+            entry_data["text"] = await get_jina_reader_content(source_url)
+        except Exception as jina_error:
+            click.echo(f"  → Jina Reader failed: {jina_error}", err=True)
+            # Use fallback: title as content for summary generation
+            entry_data["text"] = f"Article: {entry_data['title']}\nSource: {source_url}\n\nContent could not be retrieved from source."
+            click.echo(f"  → Using fallback content for summary generation")
 
         # Generate summary using OpenAI
         click.echo(f"  → Generating summary for: {entry_data['title']}")
-        entry_data["summary"] = await get_summary(entry_data["text"])
+        try:
+            entry_data["summary"] = await get_summary(entry_data["text"])
+        except Exception as summary_error:
+            click.echo(f"  → Summary generation failed: {summary_error}", err=True)
+            # Fallback: use truncated title as summary
+            entry_data["summary"] = f"Legal news article: {entry_data['title'][:100]}{'...' if len(entry_data['title']) > 100 else ''}"
+            click.echo(f"  → Using fallback summary")
 
         return entry_data
     except Exception as e:
-        click.echo(f"Error processing entry: {e}", err=True)
+        click.echo(f"Error processing entry '{entry.get('title', 'Unknown')}': {e}", err=True)
         return None
 
 

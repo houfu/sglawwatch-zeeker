@@ -229,3 +229,35 @@ class TestAsyncFunctions:
 
                 # Should only process the new article
                 assert mock_process.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_process_entry_problematic_url_handling(self):
+        """Test that problematic URLs are handled gracefully."""
+        from resources.headlines import process_entry
+
+        # Entry with a problematic URL (store.lawnet.com)
+        test_entry = {
+            "id": "test_lawnet",
+            "category": "Legal",
+            "title": "Test LawNet Article",
+            "link": "https://store.lawnet.com/jlp-starting-an-action.html?utm_source=slw_edm",
+            "author": "Legal Team",
+            "published": "04 Sep 2025 00:01:00",
+        }
+
+        with patch("resources.headlines.get_jina_reader_content") as mock_jina, patch(
+            "resources.headlines.get_summary"
+        ) as mock_summary:
+            # Mock OpenAI response
+            mock_summary.return_value = "Fallback summary for legal article"
+
+            result = await process_entry(test_entry)
+
+            # Should not call Jina Reader for problematic URLs
+            assert mock_jina.call_count == 0
+            
+            # Should still return a valid result with fallback content
+            assert result is not None
+            assert result["title"] == "Test LawNet Article"
+            assert "Content could not be retrieved" in result["text"]
+            assert result["summary"] == "Fallback summary for legal article"
