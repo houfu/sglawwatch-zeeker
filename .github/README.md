@@ -44,7 +44,21 @@ This directory contains GitHub Actions workflows for automated building and depl
 - Automatically builds database if not present locally
 - Lightweight and fast execution (< 15 minutes)
 
-### 4. `health-check.yml`
+### 4. `sync-headlines.yml`
+**Purpose:** Automated daily sync of headlines resource with incremental updates.
+
+**Triggers:**
+- **Scheduled:** Daily at 3 AM UTC
+- **Manual trigger:** Workflow dispatch with force rebuild option
+
+**Features:**
+- Incremental sync from existing S3 database (faster updates)
+- Force rebuild option for complete refresh
+- Smart build logic with sync-from-s3 capability
+- Automatic backup creation after deployment
+- Detailed statistics and recent headlines reporting
+
+### 5. `health-check.yml`
 **Purpose:** Validate deployed databases and monitor system health.
 
 **Triggers:**

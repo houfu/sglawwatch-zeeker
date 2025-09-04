@@ -2,13 +2,20 @@ name: Sync Headlines Database
 
 on:
   schedule:
-    # Run daily at 2 AM UTC (adjust timezone as needed)
+    # Run daily at 3 AM UTC (adjust timezone as needed)
     - cron: '0 3 * * *'
-  workflow_dispatch: # Allow manual triggering
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: 'Force full rebuild (ignore existing data)'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   sync-headlines:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     
     steps:
     - name: Checkout repository
@@ -35,9 +42,37 @@ jobs:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         S3_ENDPOINT_URL: ${{ secrets.S3_ENDPOINT_URL }}
-        AWS_REQUEST_CHECKSUM_CALCULATION: when_required
-        AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
-      run: uv run zeeker build --sync-from-s3 headlines
+      run: |
+        echo "Building headlines resource with sync from S3..."
+        
+        if [ "${{ github.event.inputs.force_rebuild }}" = "true" ]; then
+          echo "Force rebuild requested - building from scratch"
+          uv run zeeker build headlines
+        else
+          echo "Syncing from existing S3 database"
+          uv run zeeker build --sync-from-s3 headlines
+        fi
+        
+        # Check if database was created successfully
+        if [ ! -f "sglawwatch.db" ]; then
+          echo "Error: Database file not created"
+          exit 1
+        fi
+        
+        # Get database size for logging
+        DB_SIZE=$(du -h sglawwatch.db | cut -f1)
+        echo "Database updated successfully (${DB_SIZE})"
+        
+        # Count records for verification
+        RECORD_COUNT=$(uv run python -c "
+        import sqlite3
+        conn = sqlite3.connect('sglawwatch.db')
+        cursor = conn.cursor()
+        cursor.execute('SELECT COUNT(*) FROM headlines')
+        count = cursor.fetchone()[0]
+        print(f'Headlines: {count}')
+        ")
+        echo "Database contents: ${RECORD_COUNT}"
 
     - name: Deploy to S3
       env:
@@ -45,25 +80,79 @@ jobs:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         S3_ENDPOINT_URL: ${{ secrets.S3_ENDPOINT_URL }}
-        AWS_REQUEST_CHECKSUM_CALCULATION: when_required
-        AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
-      run: uv run zeeker deploy
+      run: |
+        echo "Deploying database to S3..."
+        uv run zeeker deploy
+        echo "Deployment completed successfully"
 
-    - name: Backup database to S3 with date
+    - name: Create backup archive
       env:
         S3_BUCKET: ${{ secrets.S3_BUCKET }}
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         S3_ENDPOINT_URL: ${{ secrets.S3_ENDPOINT_URL }}
-        AWS_REQUEST_CHECKSUM_CALCULATION: when_required
-        AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
       run: |
-        DATE_PATH=$(date +%Y/%m/%d)
-        aws s3 cp sglawwatch.db s3://$S3_BUCKET/archives/$DATE_PATH/sglawwatch.db
+        echo "Creating backup archive with today's date..."
+        uv run zeeker backup
+        echo "Backup archive created successfully"
 
-    - name: Upload database artifact
+    - name: Upload build artifacts
       uses: actions/upload-artifact@v4
+      if: always()
       with:
-        name: headlines-database-${{ github.run_number }}
-        path: sglawwatch.db
+        name: headlines-sync-${{ github.run_number }}
+        path: |
+          sglawwatch.db
+          metadata.json
         retention-days: 7
+    
+    - name: Create sync summary
+      if: success()
+      run: |
+        echo "## ✅ Headlines Sync & Backup Successful" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Database:** sglawwatch.db" >> $GITHUB_STEP_SUMMARY
+        echo "**Resource:** headlines" >> $GITHUB_STEP_SUMMARY
+        echo "**Deployed to:** s3://\${{ secrets.S3_BUCKET }}/latest/sglawwatch.db" >> $GITHUB_STEP_SUMMARY
+        echo "**Backup archived to:** s3://\${{ secrets.S3_BUCKET }}/archives/$(date -u +%Y-%m-%d)/sglawwatch.db" >> $GITHUB_STEP_SUMMARY
+        echo "**Timestamp:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+        echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+        
+        if [ "${{ github.event.inputs.force_rebuild }}" = "true" ]; then
+          echo "**Mode:** Force rebuild" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "**Mode:** Incremental sync" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        # Add database statistics
+        uv run python -c "
+        import sqlite3
+        conn = sqlite3.connect('sglawwatch.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT COUNT(*) FROM headlines')
+        headlines = cursor.fetchone()[0]
+        
+        # Get some sample data
+        cursor.execute('SELECT title FROM headlines ORDER BY date_published DESC LIMIT 3')
+        recent_headlines = [row[0] for row in cursor.fetchall()]
+        
+        print(f'**Statistics:**')
+        print(f'- Headlines processed: {headlines:,}')
+        print(f'- Recent articles: {len(recent_headlines)}')
+        if recent_headlines:
+            print(f'- Latest: {recent_headlines[0][:80]}...')
+        " >> $GITHUB_STEP_SUMMARY
+    
+    - name: Notify on failure
+      if: failure()
+      run: |
+        echo "## ❌ Headlines Sync Failed" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "The headlines database sync or deployment failed." >> $GITHUB_STEP_SUMMARY
+        echo "Check the logs above for details." >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Timestamp:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+        echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
