@@ -136,7 +136,7 @@ jobs:
         headlines = cursor.fetchone()[0]
         
         # Get some sample data
-        cursor.execute('SELECT title FROM headlines ORDER BY date_published DESC LIMIT 3')
+        cursor.execute('SELECT title FROM headlines ORDER BY date DESC LIMIT 3')
         recent_headlines = [row[0] for row in cursor.fetchall()]
         
         print(f'**Statistics:**')
