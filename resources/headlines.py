@@ -201,7 +201,8 @@ def _should_skip_entry(
     """Check if entry should be skipped and return skip reason."""
     title = entry.get("title", "")
 
-    if title.startswith("ADV:"):
+    # Skip advertisements - various formats
+    if title.startswith("ADV:") or title.startswith("ADV "):
         return True, "advertisement"
 
     try:

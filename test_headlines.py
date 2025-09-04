@@ -65,6 +65,46 @@ class TestUtilityFunctions:
             result = convert_date_to_iso("invalid date")
             assert result == "2025-08-11T12:00:00"
 
+    def test_should_skip_advertisements(self):
+        """Test that advertisements are properly filtered out."""
+        from resources.headlines import _should_skip_entry
+        from datetime import datetime
+
+        current_date = datetime.now()
+        
+        # Test ADV: format
+        adv_entry_1 = {
+            "title": "ADV: Some advertisement content",
+            "published": "04 Sep 2025 00:01:00"
+        }
+        
+        # Test ADV JLP: format (space after ADV)
+        adv_entry_2 = {
+            "title": "ADV JLP: Starting an Action (Disputes)",
+            "published": "04 Sep 2025 00:01:00"
+        }
+        
+        # Test normal article (should not be skipped for advertisement)
+        normal_entry = {
+            "title": "Singapore, India to launch roadmap on cooperation",
+            "published": "04 Sep 2025 00:01:00"
+        }
+        
+        # Test advertisement filtering
+        should_skip_1, reason_1 = _should_skip_entry(adv_entry_1, current_date, None, set())
+        assert should_skip_1 is True
+        assert reason_1 == "advertisement"
+        
+        should_skip_2, reason_2 = _should_skip_entry(adv_entry_2, current_date, None, set())
+        assert should_skip_2 is True
+        assert reason_2 == "advertisement"
+        
+        # Normal entry should not be skipped for advertisement
+        should_skip_normal, reason_normal = _should_skip_entry(normal_entry, current_date, None, set())
+        # It might be skipped for other reasons, but not for advertisement
+        if should_skip_normal:
+            assert reason_normal != "advertisement"
+
 
 class TestAsyncFunctions:
     """Test async functions in the headlines module."""
@@ -261,3 +301,4 @@ class TestAsyncFunctions:
             assert result["title"] == "Test LawNet Article"
             assert "Content could not be retrieved" in result["text"]
             assert result["summary"] == "Fallback summary for legal article"
+
