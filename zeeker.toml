@@ -15,4 +15,6 @@ columns = {id = "Primary key (Zeeker)", category = "The source of the news artic
 [resource.about_singapore_law]
 description = "About Singapore Law data"
 fragments = true
+fts_fields = ["title", "content_text"]
+fragments_fts_fields = ["content_text"]
 

@@ -13,6 +13,11 @@ on:
         required: false
         default: false
         type: boolean
+      setup_fts:
+        description: 'Set up full-text search (FTS) indexes'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   build-and-deploy:
@@ -40,13 +45,20 @@ jobs:
       run: |
         echo "Building sglawwatch database..."
         
+        # Determine FTS flag
+        FTS_FLAG=""
+        if [ "${{ github.event.inputs.setup_fts }}" = "true" ]; then
+          FTS_FLAG="--setup-fts"
+          echo "FTS (Full-Text Search) setup requested"
+        fi
+        
         # Determine which resources to build
         if [ -n "${{ github.event.inputs.resource }}" ]; then
           echo "Building specific resource: ${{ github.event.inputs.resource }}"
-          uv run zeeker build ${{ github.event.inputs.resource }}
+          uv run zeeker build ${{ github.event.inputs.resource }} $FTS_FLAG
         else
           echo "Building all resources"
-          uv run zeeker build
+          uv run zeeker build $FTS_FLAG
         fi
         
         # Check if database was created successfully

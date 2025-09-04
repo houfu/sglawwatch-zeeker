@@ -9,6 +9,11 @@ on:
         required: false
         default: false
         type: boolean
+      setup_fts:
+        description: 'Set up full-text search (FTS) indexes'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   build-and-deploy:
@@ -35,7 +40,17 @@ jobs:
     - name: Build about_singapore_law database
       run: |
         echo "Building about_singapore_law resource..."
-        uv run zeeker build about_singapore_law
+        
+        # Determine build command based on inputs
+        BUILD_CMD="uv run zeeker build about_singapore_law"
+        if [ "${{ github.event.inputs.setup_fts }}" = "true" ]; then
+          BUILD_CMD="$BUILD_CMD --setup-fts"
+          echo "FTS (Full-Text Search) setup requested"
+        fi
+        
+        # Execute build command
+        echo "Running: $BUILD_CMD"
+        $BUILD_CMD
         
         # Check if database was created successfully
         if [ ! -f "sglawwatch.db" ]; then
@@ -101,6 +116,13 @@ jobs:
         echo "**Resource:** about_singapore_law" >> $GITHUB_STEP_SUMMARY
         echo "**Deployed to:** s3://\${{ secrets.S3_BUCKET }}/latest/sglawwatch.db" >> $GITHUB_STEP_SUMMARY
         echo "**Backup archived to:** s3://\${{ secrets.S3_BUCKET }}/archives/$(date -u +%Y-%m-%d)/sglawwatch.db" >> $GITHUB_STEP_SUMMARY
+        
+        if [ "${{ github.event.inputs.setup_fts }}" = "true" ]; then
+          echo "**FTS:** Full-text search indexes created" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "**FTS:** Not configured (use setup_fts option to enable)" >> $GITHUB_STEP_SUMMARY
+        fi
+        
         echo "**Timestamp:** $(date -u)" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         
