@@ -1,0 +1,76 @@
+{
+  "title": "SG LawWatch",
+  "description": "Singapore legal news and reference articles",
+  "license": "CC-BY-4.0",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source": "Singapore LawWatch",
+  "source_url": "https://www.singaporelawwatch.sg/",
+  "extra_css_urls": [
+    "/static/databases/sglawwatch/custom.css"
+  ],
+  "extra_js_urls": [
+    "/static/databases/sglawwatch/custom.js"
+  ],
+  "databases": {
+    "sglawwatch": {
+      "title": "SG LawWatch",
+      "description": "Singapore legal news and reference articles from Singapore LawWatch, the Singapore Academy of Law's daily legal news syndication site.",
+      "source": "Singapore LawWatch",
+      "source_url": "https://www.singaporelawwatch.sg/",
+      "license": "CC-BY-4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "tables": {
+        "headlines": {
+          "description": "Legal news headlines with AI-generated summaries, collated from The Straits Times, The Business Times, Lianhe Zaobao, TODAY, and other sources.",
+          "sort_desc": "date",
+          "label_column": "title",
+          "facets": ["category"],
+          "size": 20,
+          "columns": {
+            "id": "Unique hash identifier for the headline record",
+            "category": "News source publication (e.g., Straits Times, Business Times, Lianhe Zaobao, MinLaw)",
+            "title": "Headline title of the news article",
+            "source_link": "URL link to the original article on Singapore LawWatch",
+            "author": "Author of the news article, prefixed with publication name",
+            "date": "Publication date of the article in ISO 8601 format",
+            "summary": "AI-generated summary of the article content",
+            "text": "Full extracted text content of the news article",
+            "imported_on": "Timestamp when the record was imported into the database"
+          }
+        },
+        "about_singapore_law": {
+          "description": "Reference articles from the About Singapore Law section, covering legal topics and guides for the public.",
+          "label_column": "title",
+          "facets": ["section"],
+          "columns": {
+            "id": "Unique hash identifier for the article",
+            "item_url": "URL of the article on Singapore LawWatch",
+            "title": "Title of the reference article",
+            "section": "Topical section the article belongs to (e.g., Criminal Law, Family Law)",
+            "home_page": "URL of the section home page",
+            "last_scraped": "Timestamp of the last successful scrape",
+            "content_length": "Character count of the full article text"
+          }
+        },
+        "temp_headlines": {
+          "hidden": true
+        },
+        "schema_versions": {
+          "hidden": true
+        },
+        "metadata": {
+          "hidden": true
+        },
+        "about_singapore_law_fragments": {
+          "hidden": true
+        },
+        "_zeeker_schemas": {
+          "hidden": true
+        },
+        "_zeeker_updates": {
+          "hidden": true
+        }
+      }
+    }
+  }
+}

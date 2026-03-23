@@ -1,20 +1,54 @@
 [project]
 name = "Singapore Law Watch"
 database = "sglawwatch.db"
-title = "Singapore Law Watch"
-description = "Singapore's foremost daily legal news syndication site from the Singapore Academy of Law."
-license = "MIT"
-license_url = "https://opensource.org/licenses/MIT"
-source = "https://www.singaporelawwatch.sg/"
+title = "SG LawWatch"
+description = "Singapore legal news and reference articles from Singapore LawWatch, the Singapore Academy of Law's daily legal news syndication site."
+license = "CC-BY-4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+source = "Singapore LawWatch"
+source_url = "https://www.singaporelawwatch.sg/"
 
 [resource.headlines]
-description = "Keep in touch with the latest legal news articles collated from The Straits Times, The Business Times, Lianhe Zaobao and TODAY."
+description = "Legal news headlines with AI-generated summaries, collated from The Straits Times, The Business Times, Lianhe Zaobao, TODAY, and other sources."
+sort_desc = "date"
+label_column = "title"
+facets = ["category"]
+size = 20
 fts_fields = ["title", "summary", "text"]
-columns = {id = "Primary key (Zeeker)", category = "The source of the news article", title = "Title of the news", source_link = "Source link", author = "The author of the news article", date = "Date of the news article", summary = "Brief summary", text = "Text content of the news article", imported_on = "Imported date"}
+
+[resource.headlines.columns]
+id = "Unique hash identifier for the headline record"
+category = "News source publication (e.g., Straits Times, Business Times, Lianhe Zaobao, MinLaw)"
+title = "Headline title of the news article"
+source_link = "URL link to the original article on Singapore LawWatch"
+author = "Author of the news article, prefixed with publication name"
+date = "Publication date of the article in ISO 8601 format"
+summary = "AI-generated summary of the article content"
+text = "Full extracted text content of the news article"
+imported_on = "Timestamp when the record was imported into the database"
 
 [resource.about_singapore_law]
-description = "About Singapore Law data"
+description = "Reference articles from the About Singapore Law section, covering legal topics and guides for the public."
+label_column = "title"
+facets = ["section"]
 fragments = true
 fts_fields = ["title", "content_text"]
 fragments_fts_fields = ["content_text"]
 
+[resource.about_singapore_law.columns]
+id = "Unique hash identifier for the article"
+item_url = "URL of the article on Singapore LawWatch"
+title = "Title of the reference article"
+section = "Topical section the article belongs to (e.g., Criminal Law, Family Law)"
+home_page = "URL of the section home page"
+last_scraped = "Timestamp of the last successful scrape"
+content_length = "Character count of the full article text"
+
+[resource.schema_versions]
+hidden = true
+
+[resource.metadata]
+hidden = true
+
+[resource.about_singapore_law_fragments]
+hidden = true

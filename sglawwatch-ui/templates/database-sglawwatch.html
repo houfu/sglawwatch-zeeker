@@ -1,0 +1,15 @@
+{% extends "default:database.html" %}
+
+{% block extra_head %}
+{{ super() }}
+<meta name="description" content="Custom database: sglawwatch">
+{% endblock %}
+
+{% block content %}
+<div class="custom-database-header">
+    <h1>📊 Sglawwatch Database</h1>
+    <p>Welcome to the sglawwatch database</p>
+</div>
+
+{{ super() }}
+{% endblock %}
