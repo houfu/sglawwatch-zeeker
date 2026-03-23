@@ -2,6 +2,7 @@
 Tests for the headlines resource.
 """
 
+from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -200,17 +201,19 @@ class TestAsyncFunctions:
     @pytest.mark.asyncio
     async def test_fetch_data_basic(self):
         """Test basic fetch_data functionality."""
+        yesterday = (datetime.now() - timedelta(days=1)).strftime("%d %B %Y %H:%M:%S")
+        two_days_ago = (datetime.now() - timedelta(days=2)).strftime("%d %B %Y %H:%M:%S")
         mock_feed = MagicMock()
         mock_feed.entries = [
             {
-                "published": "10 August 2025 00:01:00",  # Recent date
+                "published": yesterday,
                 "title": "Test Article 1",
                 "link": "https://example1.com",
                 "author": "Author 1",
                 "category": "Legal News",
             },
             {
-                "published": "09 August 2025 00:01:00",
+                "published": two_days_ago,
                 "title": "ADV: Advertisement",
                 "link": "https://example2.com",
             },
@@ -241,21 +244,24 @@ class TestAsyncFunctions:
         mock_db.table_names.return_value = ["_zeeker_updates", "headlines"]
         mock_table.db = mock_db
 
+        two_days_ago = (datetime.now() - timedelta(days=2)).isoformat()
         mock_updates_table = MagicMock()
-        mock_updates_table.get.return_value = {"last_updated": "2025-08-09T00:00:00"}  # Recent date
+        mock_updates_table.get.return_value = {"last_updated": two_days_ago}
         mock_db.__getitem__.return_value = mock_updates_table
 
+        yesterday = (datetime.now() - timedelta(days=1)).strftime("%d %B %Y %H:%M:%S")
+        three_days_ago = (datetime.now() - timedelta(days=3)).strftime("%d %B %Y %H:%M:%S")
         mock_feed = MagicMock()
         mock_feed.entries = [
             {
-                "published": "11 August 2025 00:01:00",  # After last_updated
+                "published": yesterday,  # After last_updated
                 "title": "New Article",
                 "link": "https://example1.com",
                 "author": "Author 1",
                 "category": "Legal News",
             },
             {
-                "published": "08 August 2025 00:01:00",  # Before last_updated
+                "published": three_days_ago,  # Before last_updated
                 "title": "Old Article",
                 "link": "https://example2.com",
             },

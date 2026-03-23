@@ -116,7 +116,11 @@ def convert_date_to_iso(date_str: str) -> str:
 
 
 async def process_entry(entry: Dict) -> Optional[Dict]:
-    """Process an entry from the RSS feed to extract necessary data."""
+    """Process an entry from the RSS feed to extract necessary data.
+
+    Returns a dict with entry data. If Jina Reader fails, the entry will have
+    ``_jina_failed = True`` so the caller can track failure rates.
+    """
     try:
         # Convert ISO date string to datetime object
         entry_date = datetime.fromisoformat(convert_date_to_iso(entry["published"]))
@@ -134,20 +138,22 @@ async def process_entry(entry: Dict) -> Optional[Dict]:
 
         # Fetch content from Jina reader with graceful fallback
         click.echo(f"Processing: {entry_data['title']} from {entry_data['date']}")
-        
+
         # Check if URL is problematic (some URLs cause 422 errors with Jina Reader)
         source_url = entry_data["source_link"]
         skip_jina = any(pattern in source_url for pattern in [
             'store.lawnet.com',  # Known to cause 422 errors
             'utm_source=',       # URLs with tracking parameters sometimes fail
         ])
-        
+
+        jina_failed = False
         try:
             if skip_jina:
                 click.echo(f"  → Skipping Jina Reader for problematic URL pattern")
                 raise Exception("URL pattern known to cause issues")
             entry_data["text"] = await get_jina_reader_content(source_url)
         except Exception as jina_error:
+            jina_failed = True
             click.echo(f"  → Jina Reader failed: {jina_error}", err=True)
             # Use fallback: title as content for summary generation
             entry_data["text"] = f"Article: {entry_data['title']}\nSource: {source_url}\n\nContent could not be retrieved from source."
@@ -163,6 +169,7 @@ async def process_entry(entry: Dict) -> Optional[Dict]:
             entry_data["summary"] = f"Legal news article: {entry_data['title'][:100]}{'...' if len(entry_data['title']) > 100 else ''}"
             click.echo(f"  → Using fallback summary")
 
+        entry_data["_jina_failed"] = jina_failed
         return entry_data
     except Exception as e:
         click.echo(f"Error processing entry '{entry.get('title', 'Unknown')}': {e}", err=True)
@@ -305,7 +312,27 @@ async def fetch_data(existing_table: Optional[Table]):
 
     results = await asyncio.gather(*tasks)
 
+    # Check Jina failure rate — if most entries failed, something is wrong
+    # (e.g. expired API token, service outage)
+    valid_results = [r for r in results if r is not None]
+    jina_failures = [r for r in valid_results if r.get("_jina_failed")]
+    if valid_results and len(jina_failures) > len(valid_results) * 0.5:
+        raise RuntimeError(
+            f"Jina Reader failed for {len(jina_failures)}/{len(valid_results)} entries. "
+            f"Check JINA_API_TOKEN or Jina service status. "
+            f"Aborting to avoid storing garbage data."
+        )
+
+    # Strip internal flag before returning
+    for r in valid_results:
+        r.pop("_jina_failed", None)
+
     click.echo(f"Added {new_entries_count} new headlines")
+    if jina_failures:
+        click.echo(
+            f"⚠️  Jina Reader failed for {len(jina_failures)}/{len(valid_results)} entries",
+            err=True,
+        )
     _log_skip_counts(
         skipped_adv_count,
         skipped_old_count,
