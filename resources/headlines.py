@@ -118,8 +118,8 @@ def convert_date_to_iso(date_str: str) -> str:
 async def process_entry(entry: Dict) -> Optional[Dict]:
     """Process an entry from the RSS feed to extract necessary data.
 
-    Returns a dict with entry data. If Jina Reader fails, the entry will have
-    ``_jina_failed = True`` so the caller can track failure rates.
+    Returns a dict with entry data. Internal flags ``_jina_failed`` and
+    ``_openai_failed`` track failures so the caller can abort on high error rates.
     """
     try:
         # Convert ISO date string to datetime object
@@ -161,15 +161,18 @@ async def process_entry(entry: Dict) -> Optional[Dict]:
 
         # Generate summary using OpenAI
         click.echo(f"  → Generating summary for: {entry_data['title']}")
+        openai_failed = False
         try:
             entry_data["summary"] = await get_summary(entry_data["text"])
         except Exception as summary_error:
+            openai_failed = True
             click.echo(f"  → Summary generation failed: {summary_error}", err=True)
             # Fallback: use truncated title as summary
             entry_data["summary"] = f"Legal news article: {entry_data['title'][:100]}{'...' if len(entry_data['title']) > 100 else ''}"
             click.echo(f"  → Using fallback summary")
 
         entry_data["_jina_failed"] = jina_failed
+        entry_data["_openai_failed"] = openai_failed
         return entry_data
     except Exception as e:
         click.echo(f"Error processing entry '{entry.get('title', 'Unknown')}': {e}", err=True)
@@ -312,25 +315,39 @@ async def fetch_data(existing_table: Optional[Table]):
 
     results = await asyncio.gather(*tasks)
 
-    # Check Jina failure rate — if most entries failed, something is wrong
+    # Check failure rates — if most entries failed, something is wrong
     # (e.g. expired API token, service outage)
     valid_results = [r for r in results if r is not None]
     jina_failures = [r for r in valid_results if r.get("_jina_failed")]
+    openai_failures = [r for r in valid_results if r.get("_openai_failed")]
+
     if valid_results and len(jina_failures) > len(valid_results) * 0.5:
         raise RuntimeError(
             f"Jina Reader failed for {len(jina_failures)}/{len(valid_results)} entries. "
             f"Check JINA_API_TOKEN or Jina service status. "
             f"Aborting to avoid storing garbage data."
         )
+    if valid_results and len(openai_failures) > len(valid_results) * 0.5:
+        raise RuntimeError(
+            f"OpenAI failed for {len(openai_failures)}/{len(valid_results)} entries. "
+            f"Check OPENAI_API_KEY or OpenAI service status. "
+            f"Aborting to avoid storing garbage data."
+        )
 
-    # Strip internal flag before returning
+    # Strip internal flags before returning
     for r in valid_results:
         r.pop("_jina_failed", None)
+        r.pop("_openai_failed", None)
 
     click.echo(f"Added {new_entries_count} new headlines")
     if jina_failures:
         click.echo(
             f"⚠️  Jina Reader failed for {len(jina_failures)}/{len(valid_results)} entries",
+            err=True,
+        )
+    if openai_failures:
+        click.echo(
+            f"⚠️  OpenAI failed for {len(openai_failures)}/{len(valid_results)} entries",
             err=True,
         )
     _log_skip_counts(
