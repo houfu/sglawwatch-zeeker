@@ -44,33 +44,54 @@ async def get_jina_reader_content(link: str) -> str:
 
 
 async def get_summary(text: str) -> str:
-    """Generate a summary of the article text using OpenAI."""
-    if not os.environ.get("OPENAI_API_KEY"):
-        click.echo("OPENAI_API_KEY environment variable not set", err=True)
+    """Generate a summary of the article text using any OpenAI-compatible LLM server.
+
+    Supports local Ollama instances on Tailscale via TAILSCALE_PROXY (socks5h://...).
+    """
+    base_url = os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1")
+    api_key = os.environ.get("LLM_API_KEY", "")
+    model = os.environ.get("LLM_MODEL", "gpt-4.1-mini")
+    tailscale_proxy = os.environ.get("TAILSCALE_PROXY", "")
+
+    if not base_url:
+        click.echo("LLM_BASE_URL not set — skipping summary", err=True)
         return ""
+
     from openai import AsyncOpenAI
 
-    client = AsyncOpenAI(max_retries=3, timeout=60)
+    # Route through Tailscale SOCKS5 proxy if set — needed to reach local Ollama
+    # instances on the Tailscale network (e.g. houfus-macbook-pro:11434)
+    http_client = None
+    if tailscale_proxy:
+        try:
+            proxy = httpx.Proxy(tailscale_proxy)
+            http_client = httpx.AsyncClient(proxy=proxy, timeout=120)
+            click.echo(f"  → Using Tailscale proxy for LLM: {tailscale_proxy}", err=True)
+        except Exception as e:
+            click.echo(f"  → Tailscale proxy setup failed: {e} — falling back to direct", err=True)
+
+    client = AsyncOpenAI(
+        base_url=base_url,
+        api_key=api_key or "ollama",
+        max_retries=3,
+        timeout=120,
+        http_client=http_client,
+    )
     try:
-        response = await client.responses.create(
-            model="gpt-5-mini",
-            input=[
-                {"role": "system", "content": [{"type": "input_text", "text": SYSTEM_PROMPT_TEXT}]},
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "input_text", "text": f"Here is an article to summarise:\n {text}"}
-                    ],
-                },
+        response = await client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT_TEXT},
+                {"role": "user", "content": f"Here is an article to summarise:\n {text[:4000]}"},
             ],
-            text={"format": {"type": "text"}},
-            reasoning={"effort": "low", "summary": "auto"},
-            store=False,
         )
-        return response.output_text
+        return response.choices[0].message.content
     except Exception as e:
-        click.echo(f"Error generating summary from OpenAI: {e}", err=True)
+        click.echo(f"Error generating summary from LLM: {e}", err=True)
         raise
+    finally:
+        if http_client:
+            await http_client.aclose()
 
 
 def get_hash_id(elements: list[str], delimiter: str = "|") -> str:
@@ -159,20 +180,20 @@ async def process_entry(entry: Dict) -> Optional[Dict]:
             entry_data["text"] = f"Article: {entry_data['title']}\nSource: {source_url}\n\nContent could not be retrieved from source."
             click.echo(f"  → Using fallback content for summary generation")
 
-        # Generate summary using OpenAI
+        # Generate summary using LLM
         click.echo(f"  → Generating summary for: {entry_data['title']}")
-        openai_failed = False
+        llm_failed = False
         try:
             entry_data["summary"] = await get_summary(entry_data["text"])
         except Exception as summary_error:
-            openai_failed = True
+            llm_failed = True
             click.echo(f"  → Summary generation failed: {summary_error}", err=True)
             # Fallback: use truncated title as summary
             entry_data["summary"] = f"Legal news article: {entry_data['title'][:100]}{'...' if len(entry_data['title']) > 100 else ''}"
             click.echo(f"  → Using fallback summary")
 
         entry_data["_jina_failed"] = jina_failed
-        entry_data["_openai_failed"] = openai_failed
+        entry_data["_llm_failed"] = llm_failed
         return entry_data
     except Exception as e:
         click.echo(f"Error processing entry '{entry.get('title', 'Unknown')}': {e}", err=True)
@@ -319,7 +340,7 @@ async def fetch_data(existing_table: Optional[Table]):
     # (e.g. expired API token, service outage)
     valid_results = [r for r in results if r is not None]
     jina_failures = [r for r in valid_results if r.get("_jina_failed")]
-    openai_failures = [r for r in valid_results if r.get("_openai_failed")]
+    llm_failures = [r for r in valid_results if r.get("_llm_failed")]
 
     if valid_results and len(jina_failures) > len(valid_results) * 0.5:
         raise RuntimeError(
@@ -327,17 +348,17 @@ async def fetch_data(existing_table: Optional[Table]):
             f"Check JINA_API_TOKEN or Jina service status. "
             f"Aborting to avoid storing garbage data."
         )
-    if valid_results and len(openai_failures) > len(valid_results) * 0.5:
+    if valid_results and len(llm_failures) > len(valid_results) * 0.5:
         raise RuntimeError(
-            f"OpenAI failed for {len(openai_failures)}/{len(valid_results)} entries. "
-            f"Check OPENAI_API_KEY or OpenAI service status. "
+            f"LLM failed for {len(llm_failures)}/{len(valid_results)} entries. "
+            f"Check LLM_BASE_URL, LLM_API_KEY, and LLM_MODEL or service status. "
             f"Aborting to avoid storing garbage data."
         )
 
     # Strip internal flags before returning
     for r in valid_results:
         r.pop("_jina_failed", None)
-        r.pop("_openai_failed", None)
+        r.pop("_llm_failed", None)
 
     click.echo(f"Added {new_entries_count} new headlines")
     if jina_failures:
@@ -345,9 +366,9 @@ async def fetch_data(existing_table: Optional[Table]):
             f"⚠️  Jina Reader failed for {len(jina_failures)}/{len(valid_results)} entries",
             err=True,
         )
-    if openai_failures:
+    if llm_failures:
         click.echo(
-            f"⚠️  OpenAI failed for {len(openai_failures)}/{len(valid_results)} entries",
+            f"⚠️  LLM failed for {len(llm_failures)}/{len(valid_results)} entries",
             err=True,
         )
     _log_skip_counts(
