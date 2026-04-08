@@ -43,12 +43,3 @@ section = "Topical section the article belongs to (e.g., Criminal Law, Family La
 home_page = "URL of the section home page"
 last_scraped = "Timestamp of the last successful scrape"
 content_length = "Character count of the full article text"
-
-[resource.schema_versions]
-hidden = true
-
-[resource.metadata]
-hidden = true
-
-[resource.about_singapore_law_fragments]
-hidden = true
