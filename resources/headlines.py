@@ -15,6 +15,11 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 HEADLINES_URL = "https://www.singaporelawwatch.sg/Portals/0/RSS/Headlines.xml"
 
+# Limit concurrent LLM calls — local Ollama handles one at a time and will
+# queue requests. Without this, all 70+ headlines fire simultaneously and
+# most time-out waiting in the queue.
+_LLM_SEMAPHORE = asyncio.Semaphore(3)
+
 SYSTEM_PROMPT_TEXT = """
 As an expert in legal affairs, your task is to provide summaries of legal news articles for time-constrained attorneys in an engaging, conversational style. These summaries should highlight the critical legal aspects, relevant precedents, and implications of the issues discussed in the articles. The summary should be in 1 narrative paragraph and should not be longer than 100 words, but ensure they efficiently deliver the key legal insights, making them beneficial for quick comprehension. The end goal is to help the lawyers understand the crux of the articles without having to read them in their entirety.
 """
@@ -73,18 +78,19 @@ async def get_summary(text: str) -> str:
     client = AsyncOpenAI(
         base_url=base_url,
         api_key=api_key or "ollama",
-        max_retries=3,
-        timeout=120,
+        max_retries=0,
+        timeout=300,
         http_client=http_client,
     )
     try:
-        response = await client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT_TEXT},
-                {"role": "user", "content": f"Here is an article to summarise:\n {text[:4000]}"},
-            ],
-        )
+        async with _LLM_SEMAPHORE:
+            response = await client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT_TEXT},
+                    {"role": "user", "content": f"Here is an article to summarise:\n {text[:4000]}"},
+                ],
+            )
         return response.choices[0].message.content
     except Exception as e:
         click.echo(f"Error generating summary from LLM: {e}", err=True)
