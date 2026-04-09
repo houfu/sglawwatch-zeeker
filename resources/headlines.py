@@ -152,9 +152,11 @@ async def process_entry(entry: Dict) -> Optional[Dict]:
         # Convert ISO date string to datetime object
         entry_date = datetime.fromisoformat(convert_date_to_iso(entry["published"]))
 
+        # Always use deterministic hash ID (RSS feed IDs are often empty or inconsistent)
+        article_id = get_hash_id([entry_date.isoformat(), entry["title"]])
         # Prepare entry data dictionary
         entry_data = {
-            "id": entry.get("id", get_hash_id([entry_date.isoformat(), entry["title"]])),
+            "id": article_id,
             "category": entry.get("category", ""),
             "title": entry.get("title", ""),
             "source_link": entry.get("link", ""),
@@ -207,25 +209,33 @@ async def process_entry(entry: Dict) -> Optional[Dict]:
 
 
 def _get_existing_data(existing_table: Optional[Table]) -> tuple[set, Optional[datetime]]:
-    """Extract existing IDs and last update time from table."""
+    """Extract existing IDs and last article date from table.
+
+    Uses MAX(date) from actual article data rather than the zeeker build timestamp.
+    This avoids the build-time vs article-time mismatch: zeeker sets last_updated to
+    datetime.now() even when 0 new articles were processed, which would filter
+    midnight-published articles on subsequent same-day builds.
+    """
     existing_ids = set()
-    last_updated = None
+    last_article_date = None
 
     if not existing_table:
-        return existing_ids, last_updated
+        return existing_ids, last_article_date
 
-    db = existing_table.db
     existing_ids = {row["id"] for row in existing_table.rows}
 
-    if "_zeeker_updates" in db.table_names():
-        updates_table = db["_zeeker_updates"]
-        try:
-            metadata = updates_table.get(existing_table.name)
-            last_updated = datetime.fromisoformat(metadata["last_updated"])
-        except Exception as e:
-            print("No metadata found for this table yet:", str(e))
+    # Use the most recent article date from actual data, not the build timestamp
+    try:
+        row = next(existing_table.db.execute(
+            f"SELECT MAX(date) as max_date FROM [{existing_table.name}]"
+        ))
+        if row and row[0]:
+            last_article_date = datetime.fromisoformat(row[0])
+            click.echo(f"  → Last article date in DB: {last_article_date.isoformat()}")
+    except Exception as e:
+        click.echo(f"Could not get max article date from table: {e}", err=True)
 
-    return existing_ids, last_updated
+    return existing_ids, last_article_date
 
 
 def _should_skip_entry(
