@@ -20,11 +20,9 @@ from sqlite_utils.db import Table
 def fetch_data(existing_table: Optional[Table]) -> List[Dict[str, Any]]:
     """Discover all legal chapters from multiple Singapore Law Watch sections."""
 
-    # DEVELOPMENT MODE: Always create fresh data
     existing_urls = set()
-    # PRODUCTION: Uncomment to enable incremental updates
-    # if existing_table:
-    #     existing_urls = {row["item_url"] for row in existing_table.rows}
+    if existing_table:
+        existing_urls = {row["item_url"] for row in existing_table.rows}
 
     all_items = []
 
