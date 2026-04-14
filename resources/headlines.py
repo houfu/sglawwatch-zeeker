@@ -91,7 +91,11 @@ async def get_summary(text: str) -> str:
                     {"role": "user", "content": f"Here is an article to summarise:\n {text[:4000]}"},
                 ],
             )
-        return response.choices[0].message.content
+        content = response.choices[0].message.content
+        if not content:
+            finish_reason = response.choices[0].finish_reason
+            raise ValueError(f"LLM returned empty content (finish_reason={finish_reason})")
+        return content
     except Exception as e:
         click.echo(f"Error generating summary from LLM: {e}", err=True)
         raise
@@ -395,3 +399,4 @@ async def fetch_data(existing_table: Optional[Table]):
         max_day_limit,
     )
     return results
+
