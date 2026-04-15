@@ -296,6 +296,58 @@ def _log_skip_counts(
         click.echo(f"Skipped {skipped_processed_id_count} headlines with duplicate IDs in database")
 
 
+async def _fetch_article_text(url: str) -> str:
+    """Fetch plain text from an article URL (HTTP fallback, no Jina required)."""
+    try:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            r = await client.get(url, headers={"User-Agent": "ZeekerBot/1.0 (+https://data.zeeker.sg)"})
+            r.raise_for_status()
+            return r.text[:8000]
+    except Exception as e:
+        click.echo(f"  → HTTP fetch failed for {url}: {e}", err=True)
+        return ""
+
+
+async def _backfill_empty_summaries(existing_table: Optional[Table]) -> None:
+    """Retroactively generate summaries for rows that have empty or null summaries."""
+    if not existing_table:
+        return
+
+    try:
+        rows = list(existing_table.db.execute(
+            f"SELECT id, title, source_link FROM [{existing_table.name}] "
+            "WHERE summary IS NULL OR summary = '' OR summary = 'None'"
+        ))
+    except Exception as e:
+        click.echo(f"Backfill: could not query empty summaries: {e}", err=True)
+        return
+
+    if not rows:
+        click.echo("Backfill: no empty summaries found")
+        return
+
+    click.echo(f"Backfill: found {len(rows)} articles with empty summaries — regenerating")
+
+    async def _fix_one(row_id: str, title: str, source_link: str) -> None:
+        text = await _fetch_article_text(source_link)
+        if not text:
+            text = f"Article: {title}\nSource: {source_link}\n\nContent could not be retrieved."
+        try:
+            async with _LLM_SEMAPHORE:
+                summary = await get_summary(text)
+            existing_table.db.execute(
+                f"UPDATE [{existing_table.name}] SET summary = ? WHERE id = ?",
+                [summary, row_id]
+            )
+            click.echo(f"  → Backfilled summary for: {title[:60]}")
+        except Exception as e:
+            click.echo(f"  → Backfill failed for {title[:60]}: {e}", err=True)
+
+    tasks = [asyncio.create_task(_fix_one(r[0], r[1], r[2])) for r in rows]
+    await asyncio.gather(*tasks)
+    click.echo(f"Backfill: done ({len(rows)} articles processed)")
+
+
 async def fetch_data(existing_table: Optional[Table]):
     """
     Fetch data for the headlines table.
@@ -308,6 +360,7 @@ async def fetch_data(existing_table: Optional[Table]):
         List[Dict[str, Any]]: List of records to insert into database
 
     """
+    await _backfill_empty_summaries(existing_table)
     click.echo(f"Fetching headlines from {HEADLINES_URL}")
     feed = feedparser.parse(HEADLINES_URL)
     max_day_limit = 60
@@ -399,4 +452,5 @@ async def fetch_data(existing_table: Optional[Table]):
         max_day_limit,
     )
     return results
+
 
