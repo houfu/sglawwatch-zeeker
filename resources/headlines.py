@@ -360,6 +360,11 @@ async def fetch_data(existing_table: Optional[Table]):
         List[Dict[str, Any]]: List of records to insert into database
 
     """
+    # One-time cleanup: drop stale temp_headlines table left by an old broken build
+    if existing_table and "temp_headlines" in existing_table.db.table_names():
+        existing_table.db["temp_headlines"].drop()
+        click.echo("Cleaned up stale temp_headlines table")
+
     await _backfill_empty_summaries(existing_table)
     click.echo(f"Fetching headlines from {HEADLINES_URL}")
     feed = feedparser.parse(HEADLINES_URL)
