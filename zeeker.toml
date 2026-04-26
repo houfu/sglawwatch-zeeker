@@ -14,7 +14,7 @@ sort_desc = "date"
 label_column = "title"
 facets = ["category"]
 size = 20
-fts_fields = ["title", "summary", "text"]
+fts_fields = ["title", "summary"]
 
 [resource.headlines.columns]
 id = "Unique hash identifier for the headline record"
@@ -32,7 +32,7 @@ description = "Reference articles from the About Singapore Law section, covering
 label_column = "title"
 facets = ["section"]
 fragments = true
-fts_fields = ["title", "content_text"]
+fts_fields = ["title"]
 fragments_fts_fields = ["content_text"]
 
 [resource.about_singapore_law.columns]
