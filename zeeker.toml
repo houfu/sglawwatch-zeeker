@@ -43,3 +43,27 @@ section = "Topical section the article belongs to (e.g., Criminal Law, Family La
 home_page = "URL of the section home page"
 last_scraped = "Timestamp of the last successful scrape"
 content_length = "Character count of the full article text"
+
+[resource.commentaries]
+description = "Law firm commentaries on recent Singapore legislation, judgments, and legal developments."
+sort_desc = "pub_date"
+label_column = "title"
+facets = ["author", "content_type"]
+fragments = true
+fts_fields = ["title", "author", "description", "full_text"]
+fragments_fts_fields = ["text"]
+size = 20
+
+[resource.commentaries.columns]
+id = "Unique hash identifier for the commentary"
+title = "Title of the commentary"
+author = "Publishing law firm or organisation"
+pub_date = "Publication date in ISO 8601 format"
+link = "URL to the original commentary (law firm website or PDF)"
+content_type = "Source format: 'pdf' or 'web'"
+description = "Brief excerpt from the RSS feed"
+full_text = "Full extracted text content (via docling for PDFs, Jina Reader for web pages)"
+imported_on = "Timestamp when the record was imported"
+
+[resource.commentaries_fragments]
+hidden = true
