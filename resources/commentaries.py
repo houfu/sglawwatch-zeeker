@@ -24,7 +24,12 @@ from sqlite_utils.db import Table
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 COMMENTARIES_RSS = "https://www.singaporelawwatch.sg/Portals/0/RSS/Commentaries.xml"
-DOCLING_URL = "http://host.docker.internal:5001"
+# host.docker.internal only resolves inside Docker containers with the
+# host-gateway add-host flag. The build runs directly on the Linux host
+# (zeeker-build script), where it fails DNS lookup. Default to localhost,
+# matching the zeeker-source-creator skill convention.
+DOCLING_URL = os.environ.get("DOCLING_SERVE_URL", "http://localhost:5001")
+DOCLING_API_KEY = os.environ.get("DOCLING_SERVE_API_KEY")
 FRAGMENT_SIZE = 1200  # characters per chunk
 FRAGMENT_OVERLAP = 150  # overlap between chunks
 
@@ -61,11 +66,16 @@ async def extract_via_docling(url: str) -> str:
         pdf_resp.raise_for_status()
         pdf_bytes = pdf_resp.content
 
+    headers = {}
+    if DOCLING_API_KEY:
+        headers["Authorization"] = f"Bearer {DOCLING_API_KEY}"
+
     async with httpx.AsyncClient(timeout=180) as client:
         r = await client.post(
             f"{DOCLING_URL}/v1/convert/source",
             files={"source": ("document.pdf", pdf_bytes, "application/pdf")},
             data={"to": "md"},
+            headers=headers,
         )
         r.raise_for_status()
         result = r.json()
