@@ -30,8 +30,21 @@ COMMENTARIES_RSS = "https://www.singaporelawwatch.sg/Portals/0/RSS/Commentaries.
 # matching the zeeker-source-creator skill convention.
 DOCLING_URL = os.environ.get("DOCLING_SERVE_URL", "http://localhost:5001")
 DOCLING_API_KEY = os.environ.get("DOCLING_SERVE_API_KEY")
+# docling-serve runs a single worker by default; firing all RSS PDFs at it
+# concurrently makes later ones exceed the httpx timeout (504 Gateway Timeout).
+# Cap in-flight conversions; increase only if docling-serve is scaled up.
+DOCLING_CONCURRENCY = int(os.environ.get("DOCLING_CONCURRENCY", "2"))
+_docling_semaphore: Optional["asyncio.Semaphore"] = None
 FRAGMENT_SIZE = 1200  # characters per chunk
 FRAGMENT_OVERLAP = 150  # overlap between chunks
+
+
+def _get_docling_semaphore() -> "asyncio.Semaphore":
+    """Lazy-init so the semaphore binds to whichever event loop runs first."""
+    global _docling_semaphore
+    if _docling_semaphore is None:
+        _docling_semaphore = asyncio.Semaphore(DOCLING_CONCURRENCY)
+    return _docling_semaphore
 
 
 def get_hash_id(elements: list[str]) -> str:
@@ -75,15 +88,16 @@ async def extract_via_docling(url: str) -> str:
     # (plural array), format param is "to_formats". image_export_mode=placeholder
     # keeps the markdown free of base64-embedded image data (otherwise typical
     # commentary PDFs balloon to 600KB+ of mostly image dumps).
-    async with httpx.AsyncClient(timeout=180) as client:
-        r = await client.post(
-            f"{DOCLING_URL}/v1/convert/file",
-            files=[("files", ("document.pdf", pdf_bytes, "application/pdf"))],
-            data={"to_formats": "md", "image_export_mode": "placeholder"},
-            headers=headers,
-        )
-        r.raise_for_status()
-        result = r.json()
+    async with _get_docling_semaphore():
+        async with httpx.AsyncClient(timeout=180) as client:
+            r = await client.post(
+                f"{DOCLING_URL}/v1/convert/file",
+                files=[("files", ("document.pdf", pdf_bytes, "application/pdf"))],
+                data={"to_formats": "md", "image_export_mode": "placeholder"},
+                headers=headers,
+            )
+            r.raise_for_status()
+            result = r.json()
 
     # Handle docling-serve response formats
     md = (
