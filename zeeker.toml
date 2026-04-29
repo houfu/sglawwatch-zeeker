@@ -65,5 +65,3 @@ description = "Brief excerpt from the RSS feed"
 full_text = "Full extracted text content (via docling for PDFs, Jina Reader for web pages)"
 imported_on = "Timestamp when the record was imported"
 
-[resource.commentaries_fragments]
-hidden = true
