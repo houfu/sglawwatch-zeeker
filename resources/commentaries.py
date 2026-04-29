@@ -70,11 +70,16 @@ async def extract_via_docling(url: str) -> str:
     if DOCLING_API_KEY:
         headers["Authorization"] = f"Bearer {DOCLING_API_KEY}"
 
+    # /v1/convert/file is the multipart byte-upload endpoint. /v1/convert/source
+    # takes JSON with a URL — different shape entirely. Field name is "files"
+    # (plural array), format param is "to_formats". image_export_mode=placeholder
+    # keeps the markdown free of base64-embedded image data (otherwise typical
+    # commentary PDFs balloon to 600KB+ of mostly image dumps).
     async with httpx.AsyncClient(timeout=180) as client:
         r = await client.post(
-            f"{DOCLING_URL}/v1/convert/source",
-            files={"source": ("document.pdf", pdf_bytes, "application/pdf")},
-            data={"to": "md"},
+            f"{DOCLING_URL}/v1/convert/file",
+            files=[("files", ("document.pdf", pdf_bytes, "application/pdf"))],
+            data={"to_formats": "md", "image_export_mode": "placeholder"},
             headers=headers,
         )
         r.raise_for_status()
