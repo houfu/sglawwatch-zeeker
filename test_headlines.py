@@ -2,12 +2,15 @@
 Tests for the headlines resource.
 """
 
+import asyncio
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+import resources.headlines as headlines_module
 from resources.headlines import (
+    _get_llm_semaphore,
     convert_date_to_iso,
     fetch_data,
     get_hash_id,
@@ -308,3 +311,40 @@ class TestAsyncFunctions:
             assert "Content could not be retrieved" in result["text"]
             assert result["summary"] == "Fallback summary for legal article"
 
+
+class TestSemaphoreLoopBinding:
+    """Regression: Semaphore must rebind when asyncio.run is called more than once per process.
+
+    Zeeker's async executor calls asyncio.run() once per resource and may
+    retry the entire fetch_data after a transient failure. Before the fix,
+    the module-level _LLM_SEMAPHORE was created at import time and bound to
+    whichever loop acquired it first; the next asyncio.run hit
+    "Semaphore is bound to a different event loop".
+    """
+
+    def setup_method(self):
+        # Reset the cached state so the first asyncio.run inside the test
+        # starts from a clean slate regardless of test order.
+        headlines_module._LLM_SEMAPHORE = None
+        headlines_module._LLM_SEMAPHORE_LOOP = None
+
+    def test_get_llm_semaphore_rebinds_across_asyncio_run(self):
+        async def acquire_release():
+            sem = _get_llm_semaphore()
+            async with sem:
+                pass
+            return sem
+
+        sem1 = asyncio.run(acquire_release())
+        # Without the loop check, the second asyncio.run reuses sem1 and
+        # raises RuntimeError on `async with`.
+        sem2 = asyncio.run(acquire_release())
+
+        assert sem1 is not sem2
+
+    def test_get_llm_semaphore_stable_within_one_run(self):
+        async def two_acquires():
+            return _get_llm_semaphore(), _get_llm_semaphore()
+
+        a, b = asyncio.run(two_acquires())
+        assert a is b

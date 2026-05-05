@@ -18,7 +18,23 @@ HEADLINES_URL = "https://www.singaporelawwatch.sg/Portals/0/RSS/Headlines.xml"
 # Limit concurrent LLM calls — local Ollama handles one at a time and will
 # queue requests. Without this, all 70+ headlines fire simultaneously and
 # most time-out waiting in the queue.
-_LLM_SEMAPHORE = asyncio.Semaphore(3)
+LLM_CONCURRENCY = 3
+_LLM_SEMAPHORE: Optional[asyncio.Semaphore] = None
+_LLM_SEMAPHORE_LOOP: Optional[asyncio.AbstractEventLoop] = None
+
+
+def _get_llm_semaphore() -> asyncio.Semaphore:
+    # asyncio.Semaphore binds to the loop that first acquires it. Zeeker's
+    # async executor calls asyncio.run() once per resource and may retry the
+    # whole fetch_data — a second asyncio.run reuses our cached Semaphore
+    # against a different loop and crashes with "bound to a different event
+    # loop". Re-create whenever the running loop changes.
+    global _LLM_SEMAPHORE, _LLM_SEMAPHORE_LOOP
+    loop = asyncio.get_running_loop()
+    if _LLM_SEMAPHORE is None or _LLM_SEMAPHORE_LOOP is not loop:
+        _LLM_SEMAPHORE = asyncio.Semaphore(LLM_CONCURRENCY)
+        _LLM_SEMAPHORE_LOOP = loop
+    return _LLM_SEMAPHORE
 
 SYSTEM_PROMPT_TEXT = """
 As an expert in legal affairs, your task is to provide summaries of legal news articles for time-constrained attorneys in an engaging, conversational style. These summaries should highlight the critical legal aspects, relevant precedents, and implications of the issues discussed in the articles. The summary should be in 1 narrative paragraph and should not be longer than 100 words, but ensure they efficiently deliver the key legal insights, making them beneficial for quick comprehension. The end goal is to help the lawyers understand the crux of the articles without having to read them in their entirety.
@@ -83,7 +99,7 @@ async def get_summary(text: str) -> str:
         http_client=http_client,
     )
     try:
-        async with _LLM_SEMAPHORE:
+        async with _get_llm_semaphore():
             response = await client.chat.completions.create(
                 model=model,
                 messages=[
@@ -333,7 +349,7 @@ async def _backfill_empty_summaries(existing_table: Optional[Table]) -> None:
         if not text:
             text = f"Article: {title}\nSource: {source_link}\n\nContent could not be retrieved."
         try:
-            async with _LLM_SEMAPHORE:
+            async with _get_llm_semaphore():
                 summary = await get_summary(text)
             existing_table.db.execute(
                 f"UPDATE [{existing_table.name}] SET summary = ? WHERE id = ?",

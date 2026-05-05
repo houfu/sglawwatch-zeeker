@@ -35,15 +35,21 @@ DOCLING_API_KEY = os.environ.get("DOCLING_SERVE_API_KEY")
 # Cap in-flight conversions; increase only if docling-serve is scaled up.
 DOCLING_CONCURRENCY = int(os.environ.get("DOCLING_CONCURRENCY", "2"))
 _docling_semaphore: Optional["asyncio.Semaphore"] = None
+_docling_semaphore_loop: Optional[asyncio.AbstractEventLoop] = None
 FRAGMENT_SIZE = 1200  # characters per chunk
 FRAGMENT_OVERLAP = 150  # overlap between chunks
 
 
 def _get_docling_semaphore() -> "asyncio.Semaphore":
-    """Lazy-init so the semaphore binds to whichever event loop runs first."""
-    global _docling_semaphore
-    if _docling_semaphore is None:
+    # Bind per running loop. Zeeker's async executor may call asyncio.run()
+    # more than once per process (e.g. retrying fetch_data after a transient
+    # docling/proxy failure). A Semaphore from the previous loop raises
+    # "bound to a different event loop" when re-acquired in the new one.
+    global _docling_semaphore, _docling_semaphore_loop
+    loop = asyncio.get_running_loop()
+    if _docling_semaphore is None or _docling_semaphore_loop is not loop:
         _docling_semaphore = asyncio.Semaphore(DOCLING_CONCURRENCY)
+        _docling_semaphore_loop = loop
     return _docling_semaphore
 
 
