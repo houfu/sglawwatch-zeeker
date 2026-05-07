@@ -18,7 +18,16 @@ HEADLINES_URL = "https://www.singaporelawwatch.sg/Portals/0/RSS/Headlines.xml"
 # Limit concurrent LLM calls — local Ollama handles one at a time and will
 # queue requests. Without this, all 70+ headlines fire simultaneously and
 # most time-out waiting in the queue.
-_LLM_SEMAPHORE = asyncio.Semaphore(3)
+# Lazy-init so the semaphore binds to whichever event loop runs first,
+# not the import-time loop (which may differ from the asyncio.run() loop).
+_LLM_SEMAPHORE: Optional[asyncio.Semaphore] = None
+
+
+def _get_llm_semaphore() -> asyncio.Semaphore:
+    global _LLM_SEMAPHORE
+    if _LLM_SEMAPHORE is None:
+        _LLM_SEMAPHORE = asyncio.Semaphore(3)
+    return _LLM_SEMAPHORE
 
 SYSTEM_PROMPT_TEXT = """
 As an expert in legal affairs, your task is to provide summaries of legal news articles for time-constrained attorneys in an engaging, conversational style. These summaries should highlight the critical legal aspects, relevant precedents, and implications of the issues discussed in the articles. The summary should be in 1 narrative paragraph and should not be longer than 100 words, but ensure they efficiently deliver the key legal insights, making them beneficial for quick comprehension. The end goal is to help the lawyers understand the crux of the articles without having to read them in their entirety.
@@ -83,7 +92,7 @@ async def get_summary(text: str) -> str:
         http_client=http_client,
     )
     try:
-        async with _LLM_SEMAPHORE:
+        async with _get_llm_semaphore():
             response = await client.chat.completions.create(
                 model=model,
                 messages=[
@@ -333,7 +342,7 @@ async def _backfill_empty_summaries(existing_table: Optional[Table]) -> None:
         if not text:
             text = f"Article: {title}\nSource: {source_link}\n\nContent could not be retrieved."
         try:
-            async with _LLM_SEMAPHORE:
+            async with _get_llm_semaphore():
                 summary = await get_summary(text)
             existing_table.db.execute(
                 f"UPDATE [{existing_table.name}] SET summary = ? WHERE id = ?",
