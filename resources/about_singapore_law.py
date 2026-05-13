@@ -9,6 +9,7 @@ Tables created:
 """
 
 import hashlib
+import os
 import time
 from typing import Any, Dict, List, Optional
 
@@ -16,9 +17,20 @@ import httpx
 from bs4 import BeautifulSoup
 from sqlite_utils.db import Table
 
+# Zeeker calls fetch_data twice for fragment resources (second call builds main_data_context
+# for fetch_fragments_data). The second call passes existing_table=None, so the dedup check
+# sees an empty set and returns all chapters again, causing duplicate rows. This sentinel
+# detects the second call and short-circuits it. Same pattern as zeeker-judgements.
+_RAN_PID_KEY = "_ABOUT_SG_LAW_MAIN_RAN_PID"
+
 
 def fetch_data(existing_table: Optional[Table]) -> List[Dict[str, Any]]:
     """Discover all legal chapters from multiple Singapore Law Watch sections."""
+
+    current_pid = str(os.getpid())
+    if os.environ.get(_RAN_PID_KEY) == current_pid:
+        return []
+    os.environ[_RAN_PID_KEY] = current_pid
 
     existing_urls = set()
     if existing_table:
@@ -56,11 +68,9 @@ def fetch_fragments_data(
     if not main_data_context:
         return []
 
-    # DEVELOPMENT MODE: Always create fresh fragments
     existing_fragment_ids = set()
-    # PRODUCTION: Uncomment to enable incremental updates
-    # if existing_fragments_table:
-    #     existing_fragment_ids = {row["id"] for row in existing_fragments_table.rows}
+    if existing_fragments_table:
+        existing_fragment_ids = {row["id"] for row in existing_fragments_table.rows}
 
     all_fragments = []
 
