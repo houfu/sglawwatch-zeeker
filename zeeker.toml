@@ -65,15 +65,3 @@ description = "Brief excerpt from the RSS feed"
 full_text = "Full extracted text content (via docling for PDFs, Jina Reader for web pages)"
 imported_on = "Timestamp when the record was imported"
 
-[resource.about_singapore_law_fragments.columns]
-id = "Unique identifier for this fragment (hash of parent URL + sequence)"
-parent_id = "ID of the parent article in about_singapore_law"
-content_text = "Text of this paragraph or section from the reference article"
-sequence = "Position of this fragment within the article (0-indexed)"
-
-[resource.commentaries_fragments.columns]
-id = "Unique identifier for this text chunk"
-parent_id = "ID of the parent commentary in commentaries"
-text = "Text chunk from the commentary (chunked at ~1200 chars with overlap)"
-sequence = "Position of this chunk within the commentary (0-indexed)"
-
